@@ -1,0 +1,52 @@
+# impagina-api — il servizio HTTP di impagina
+#
+#   ./impagina.sh --api chiave nuova nextcloud   # crea config/chiavi.conf
+#   ./impagina.sh --api avvia                    # oppure: docker compose up -d --build
+#
+# Il servizio ascolta solo su 127.0.0.1: per raggiungerlo da un'altra macchina
+# mettilo dietro un reverse proxy con HTTPS (esempi nel README).
+# Ogni valore sotto "environment" e' documentato nel README, sezione
+# "Servizio API > Configurazione".
+
+services:
+  impagina-api:
+    build:
+      context: .
+      target: api
+    image: impagina-api:2.0.0
+    restart: unless-stopped
+    # tini come PID 1: raccoglie i processi di pandoc e typst interrotti al
+    # timeout e inoltra i segnali al server.
+    init: true
+    ports:
+      - "127.0.0.1:${IMPAGINA_API_PORTA_HOST:-8080}:8080"
+    environment:
+      IMPAGINA_API_WORKER: "${IMPAGINA_API_WORKER:-1}"
+      IMPAGINA_API_TIMEOUT: "${IMPAGINA_API_TIMEOUT:-120}"
+      IMPAGINA_API_TTL: "${IMPAGINA_API_TTL:-3600}"
+      IMPAGINA_API_MAX_CORPO: "${IMPAGINA_API_MAX_CORPO:-50M}"
+      IMPAGINA_API_TYPST_GREZZO: "${IMPAGINA_API_TYPST_GREZZO:-0}"
+    volumes:
+      # La cartella e non il solo file: chi aggiorna chiavi.conf lo riscrive
+      # con un file nuovo (impagina.sh, ma anche molti editor), e un file
+      # montato singolarmente resterebbe quello vecchio dentro il container.
+      - ./config:/etc/impagina:ro
+      # Template esterni: altre directory si aggiungono con un
+      # compose.override.yaml e IMPAGINA_TEMPLATES_PATH (vedi README,
+      # "Template esterni").
+      - ./templates:/templates:ro
+      - lavori:/var/lib/impagina-api
+    # Irrobustimento: filesystem in sola lettura (si scrive solo nel volume
+    # dei lavori e in /tmp), nessuna capability, nessuna escalation.
+    read_only: true
+    tmpfs:
+      - /tmp:size=64m
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    mem_limit: 1g
+    pids_limit: 256
+
+volumes:
+  lavori:

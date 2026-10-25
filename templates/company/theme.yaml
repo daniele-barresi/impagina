@@ -1,0 +1,82 @@
+# ---------------------------------------------------------------------------
+# impagina — template "company"
+#
+# Questo e' l'UNICO file da modificare per cambiare l'aspetto dei documenti.
+# Ogni valore puo' essere sovrascritto per singolo documento nel front-matter
+# del .md. Precedenza:  front-matter  >  flag CLI  >  questo file.
+#
+# NOTA sui colori: si scrivono in esadecimale SENZA il carattere '#'
+# (il cancelletto ha un significato speciale sia in YAML sia in Typst).
+# ---------------------------------------------------------------------------
+
+# --- Formato -------------------------------------------------------------
+# Versione del formato dei template che questo file rispetta: impagina
+# rifiuta, con un errore nel log, i template di un formato che non conosce.
+# Se la chiave manca vale 1.
+impagina-format: 1
+
+# --- Identita' visiva ------------------------------------------------------
+accent:       "1F4E79"   # blu aziendale: titoli, filetti, bordo dei codici
+accent-soft:  "E8EEF5"   # tinta chiara dell'accento: sfondo righe di tabella
+text-color:   "1A1A1A"   # colore del testo del corpo
+muted-color:  "6B7280"   # grigio per intestazione, pie' di pagina, didascalie
+code-bg:      "F5F7FA"   # sfondo dei blocchi di codice
+rule-color:   "D8DEE6"   # filetti e bordi sottili
+
+# --- Tipo di documento (icona sulla copertina) -----------------------------
+# Si indica di norma nel front-matter del singolo documento:
+#
+#   doc-type: relazione
+#
+# Categorie predefinite (icona in assets/icons + etichetta gia' pronta):
+#   documento-tecnico  analisi      proposta       offerta-economica
+#   offerta-tecnico-economica       stato-avanzamento
+#   piano-progetto     specifiche   collaudo       manuale
+#   verbale            contratto    sicurezza      relazione
+#
+# In alternativa doc-icon accetta il percorso di un'icona propria (SVG o PNG),
+# relativo al documento Markdown; un SVG con stroke="currentColor" viene tinto
+# del colore accent. doc-label sostituisce l'etichetta predefinita e
+# doc-hide-label: true la toglie, lasciando la sola icona.
+doc-icon-size: "0.53cm"
+
+# --- Tipografia ------------------------------------------------------------
+mainfont:     "Inter"           # font del testo (incluso nell'immagine)
+headingfont:  "Inter"           # font dei titoli (se omesso, usa mainfont)
+codefont:     "JetBrains Mono"  # font monospazio (incluso nell'immagine)
+fontsize:     "10.5pt"
+codesize:     "8.6pt"
+tablesize:    "0.85em"          # testo delle tabelle: piu' piccolo del corpo
+linestretch:  "0.72em"          # interlinea aggiuntiva fra le righe
+lang:         "it"              # attiva la sillabazione italiana
+justify:      true              # testo giustificato
+
+# Nelle tabelle le parole restano intere (niente sillabazione): in colonne
+# strette e' piu' leggibile. Portare a true solo per tabelle molto affollate,
+# dove una parola piu' larga della colonna sborderebbe dalla cella. Si puo'
+# impostare anche nel front-matter del singolo documento.
+table-hyphenate: false
+
+# --- Pagina ----------------------------------------------------------------
+papersize:      "a4"
+margin-top:     "3.1cm"
+margin-bottom:  "2.4cm"
+margin-x:       "2.2cm"
+
+# --- Logo ------------------------------------------------------------------
+# Percorso relativo alla cartella del template. Sostituisci il file in
+# assets/ per cambiare logo: nessuna ricostruzione dell'immagine Docker.
+logo:                "assets/logo.svg"
+logo-header-height:  "0.85cm"
+logo-cover-height:   "2.8cm"
+
+# --- Intestazione e pie' di pagina -----------------------------------------
+header-rule:   true                  # filetto sotto l'intestazione
+footer-text:   "Acme S.r.l. — Documento riservato"
+footer-rule:   true
+page-numbering: "1 / 1"              # formato Typst: "1 / 1" produce "3 / 12"
+
+# --- Comportamenti predefiniti ---------------------------------------------
+cover:      true    # copertina come prima pagina
+toc:        false   # indice (attivabile con --toc)
+toc-depth:  3

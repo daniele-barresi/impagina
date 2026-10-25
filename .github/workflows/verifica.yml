@@ -1,0 +1,41 @@
+# Costruisce le immagini e lancia le tre suite di verifica (vedi README, "Test")
+# a ogni push su main, su ogni tag di rilascio e su ogni pull request.
+name: verifica
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Strumenti per i controlli sul PDF
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends poppler-utils fonts-dejavu-core
+
+      - name: Immagine della CLI
+        run: docker build -t impagina .
+
+      - name: Suite della CLI
+        run: ./test/run-tests.sh
+
+      - name: Immagine del servizio API
+        run: docker build --target api -t impagina-api .
+
+      - name: Suite del servizio API
+        run: ./test/run-tests-api.sh
+
+      - name: Test di unità
+        run: >
+          docker run --rm --entrypoint python3 -v "$PWD/test:/test:ro"
+          impagina-api /test/api-unita.py

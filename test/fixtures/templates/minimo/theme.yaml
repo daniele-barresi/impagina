@@ -1,0 +1,5 @@
+# impagina — template "minimo", solo per la suite di verifica.
+# La suite sostituisce mainfont con un font copiato in fonts/, che il
+# container non ha fra i font di sistema.
+impagina-format: 1
+mainfont: "DA-IMPOSTARE"

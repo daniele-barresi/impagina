@@ -1,0 +1,558 @@
+openapi: 3.1.0
+
+# Descrittore del servizio API di impagina. Il servizio lo espone anche su
+# GET /openapi.yaml, senza autenticazione. La versione qui sotto deve
+# coincidere con __version__ in src/impagina.py: la suite di test lo verifica.
+
+info:
+  title: impagina API
+  version: 2.0.0
+  summary: Conversione asincrona di documenti Markdown in PDF con template aziendali.
+  description: |
+    Si invia un documento Markdown con le immagini che referenzia (multipart)
+    oppure una cartella compressa (ZIP), si riceve l'identificativo di un
+    lavoro, si interroga lo stato e si scarica il PDF quando e' pronto.
+
+    I lavori passano da una coda e vengono convertiti uno alla volta per
+    default. I documenti sono convertiti in modalita' protetta: niente Typst
+    grezzo, immagini solo con percorsi relativi, metadati del front-matter
+    validati.
+
+    Ogni errore ha la forma `{"errore": {"codice", "messaggio", "suggerimento"}}`,
+    con un `codice` stabile che il client puo' confrontare.
+
+servers:
+  - url: http://127.0.0.1:8080
+    description: Servizio locale avviato con ./impagina.sh --api avvia
+
+security:
+  - chiave: []
+
+tags:
+  - name: servizio
+    description: Stato del servizio e informazioni generali.
+  - name: lavori
+    description: Invio, stato, risultato ed eliminazione delle conversioni.
+  - name: documenti
+    description: Analisi di un documento prima dell'invio.
+
+paths:
+  /salute:
+    get:
+      tags: [servizio]
+      operationId: salute
+      summary: Stato del servizio
+      description: Non richiede autenticazione; usato anche dall'healthcheck del container.
+      security: []
+      responses:
+        "200":
+          description: Il servizio e' attivo.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Salute" }
+
+  /openapi.yaml:
+    get:
+      tags: [servizio]
+      operationId: descrittore
+      summary: Questo descrittore OpenAPI
+      security: []
+      responses:
+        "200":
+          description: Il descrittore in YAML.
+          content:
+            application/yaml:
+              schema: { type: string }
+
+  /template:
+    get:
+      tags: [servizio]
+      operationId: elencaTemplate
+      summary: Template disponibili
+      responses:
+        "200":
+          description: Nomi dei template, nell'ordine di precedenza.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [template]
+                properties:
+                  template:
+                    type: array
+                    items: { type: string }
+                    examples: [["company"]]
+        "401": { $ref: "#/components/responses/NonAutorizzato" }
+
+  /dipendenze:
+    post:
+      tags: [documenti]
+      operationId: dipendenze
+      summary: File referenziati da un documento
+      description: |
+        Analizza il Markdown senza convertirlo ed elenca i file che referenzia
+        (immagini e `doc-icon`), con i percorsi normalizzati da usare come nome
+        degli allegati. Con il corpo multipart, gli `allegato` gia' presenti
+        (basta il nome, il contenuto puo' essere vuoto) vengono segnati come
+        tali.
+      requestBody:
+        required: true
+        content:
+          text/markdown:
+            schema: { type: string }
+          multipart/form-data:
+            schema:
+              type: object
+              required: [documento]
+              properties:
+                documento:
+                  type: string
+                  format: binary
+                  description: Il file .md.
+                allegato:
+                  type: array
+                  items: { type: string, format: binary }
+                  description: File gia' pronti per l'invio; conta il nome del file.
+      responses:
+        "200":
+          description: Elenco dei file referenziati.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Dipendenze" }
+        "400": { $ref: "#/components/responses/RichiestaNonValida" }
+        "401": { $ref: "#/components/responses/NonAutorizzato" }
+        "411": { $ref: "#/components/responses/LunghezzaRichiesta" }
+        "413": { $ref: "#/components/responses/TroppoGrande" }
+        "415": { $ref: "#/components/responses/TipoNonSupportato" }
+        "422":
+          description: Front-matter non valido (`front_matter_non_valido`) o analisi troppo lunga (`tempo_scaduto`).
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Errore" }
+        "503": { $ref: "#/components/responses/Occupato" }
+
+  /lavori:
+    post:
+      tags: [lavori]
+      operationId: creaLavoro
+      summary: Nuovo lavoro di conversione
+      description: |
+        Due forme, distinte dal `Content-Type`:
+
+        - `multipart/form-data`: un campo `documento` con il file .md e un
+          campo `allegato` per ogni file che referenzia. **Il nome del file di
+          ogni allegato e' il suo percorso relativo al documento** (per esempio
+          `immagini/schema.png`): e' cio' che permette al Markdown di trovarlo.
+          Sono accettati anche i nomi `allegato[0]`, `allegato[1]`, … (PHP).
+          Le opzioni possono essere campi del form o parametri della query;
+          il campo del form vince.
+        - `application/zip`: una cartella compressa con uno o piu' .md e le
+          immagini; le opzioni vanno nella query. Se tutto l'archivio sta sotto
+          un'unica cartella, quella cartella viene tolta.
+
+        Un'opzione sconosciuta e' un errore (`400 opzione_non_valida`).
+        Autenticazione e dimensione vengono verificate prima di ricevere il
+        corpo (con `Expect: 100-continue`).
+      parameters:
+        - $ref: "#/components/parameters/template"
+        - $ref: "#/components/parameters/toc"
+        - $ref: "#/components/parameters/cover"
+        - $ref: "#/components/parameters/watermark"
+        - $ref: "#/components/parameters/recursive"
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [documento]
+              properties:
+                documento:
+                  type: string
+                  format: binary
+                  description: Il file .md da convertire (ne conta solo il nome base).
+                allegato:
+                  type: array
+                  items: { type: string, format: binary }
+                  description: File referenziati dal documento, con il percorso relativo come nome.
+                template: { $ref: "#/components/schemas/NomeTemplate" }
+                toc: { $ref: "#/components/schemas/Booleano" }
+                cover: { $ref: "#/components/schemas/Booleano" }
+                watermark: { $ref: "#/components/schemas/Watermark" }
+          application/zip:
+            schema: { type: string, format: binary }
+      responses:
+        "202":
+          description: Lavoro accettato e messo in coda.
+          headers:
+            Location:
+              description: URL del lavoro.
+              schema: { type: string, examples: ["/lavori/169e201112dc4da9876768b16991ac02"] }
+            Retry-After:
+              description: Secondi suggeriti prima di interrogare lo stato.
+              schema: { type: integer }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/LavoroCreato" }
+        "400":
+          description: |
+            Richiesta non valida: `richiesta_non_valida`, `opzione_non_valida`,
+            `percorso_non_valido` (un nome di file prova a uscire dalla
+            cartella, oppure uno ZIP contiene collegamenti simbolici).
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Errore" }
+        "401": { $ref: "#/components/responses/NonAutorizzato" }
+        "411": { $ref: "#/components/responses/LunghezzaRichiesta" }
+        "413": { $ref: "#/components/responses/TroppoGrande" }
+        "415": { $ref: "#/components/responses/TipoNonSupportato" }
+        "422":
+          description: "`template_non_trovato`, `nessun_documento` (ZIP senza .md), `zip_non_valido`."
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Errore" }
+        "503": { $ref: "#/components/responses/Occupato" }
+
+  /lavori/{id}:
+    parameters:
+      - $ref: "#/components/parameters/id"
+    get:
+      tags: [lavori]
+      operationId: statoLavoro
+      summary: Stato di un lavoro
+      description: Finche' il lavoro non e' terminato la risposta include `Retry-After`.
+      responses:
+        "200":
+          description: Stato del lavoro.
+          headers:
+            Retry-After:
+              description: Presente se il lavoro e' in coda o in corso.
+              schema: { type: integer }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Lavoro" }
+        "401": { $ref: "#/components/responses/NonAutorizzato" }
+        "404": { $ref: "#/components/responses/LavoroNonTrovato" }
+    delete:
+      tags: [lavori]
+      operationId: eliminaLavoro
+      summary: Elimina un lavoro
+      description: Cancella subito il lavoro e il suo risultato, o lo toglie dalla coda.
+      responses:
+        "204":
+          description: Eliminato.
+        "401": { $ref: "#/components/responses/NonAutorizzato" }
+        "404": { $ref: "#/components/responses/LavoroNonTrovato" }
+        "409": { $ref: "#/components/responses/NonPronto" }
+
+  /lavori/{id}/risultato:
+    parameters:
+      - $ref: "#/components/parameters/id"
+    get:
+      tags: [lavori]
+      operationId: risultatoLavoro
+      summary: Scarica il risultato
+      description: |
+        Il PDF, oppure uno ZIP che replica la struttura delle cartelle se i PDF
+        sono piu' di uno. Se il lavoro e' fallito risponde con l'errore del
+        lavoro e il codice HTTP corrispondente (422 per i problemi del
+        documento, 500 per quelli del servizio).
+      responses:
+        "200":
+          description: Il file prodotto.
+          headers:
+            Content-Disposition:
+              description: Nome del file, anche in UTF-8 (`filename*`).
+              schema: { type: string }
+          content:
+            application/pdf:
+              schema: { type: string, format: binary }
+            application/zip:
+              schema: { type: string, format: binary }
+        "401": { $ref: "#/components/responses/NonAutorizzato" }
+        "404": { $ref: "#/components/responses/LavoroNonTrovato" }
+        "409": { $ref: "#/components/responses/NonPronto" }
+        "422":
+          description: Il documento non si e' potuto convertire.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Errore" }
+        "500":
+          description: Il lavoro e' fallito per un problema del servizio.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Errore" }
+
+components:
+  securitySchemes:
+    chiave:
+      type: http
+      scheme: bearer
+      description: |
+        Token di una chiave nominata, creato con
+        `./impagina.sh --api chiave nuova NOME`. Ogni chiave vede solo i
+        propri lavori.
+
+  parameters:
+    id:
+      name: id
+      in: path
+      required: true
+      schema: { type: string, pattern: "^[0-9a-f]{32}$" }
+    template:
+      name: template
+      in: query
+      schema: { $ref: "#/components/schemas/NomeTemplate" }
+    toc:
+      name: toc
+      in: query
+      description: Genera l'indice.
+      schema: { $ref: "#/components/schemas/Booleano" }
+    cover:
+      name: cover
+      in: query
+      description: Forza (`true`) o disattiva (`false`) la copertina; se assente decide il template.
+      schema: { $ref: "#/components/schemas/Booleano" }
+    watermark:
+      name: watermark
+      in: query
+      schema: { $ref: "#/components/schemas/Watermark" }
+    recursive:
+      name: recursive
+      in: query
+      description: Solo con ZIP; converte anche i .md nelle sottocartelle.
+      schema: { $ref: "#/components/schemas/Booleano" }
+
+  responses:
+    NonAutorizzato:
+      description: Chiave mancante o non valida (`non_autorizzato`).
+      headers:
+        WWW-Authenticate:
+          schema: { type: string, examples: ['Bearer realm="impagina"'] }
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Errore" }
+    RichiestaNonValida:
+      description: "`richiesta_non_valida`, `percorso_non_valido`."
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Errore" }
+    LavoroNonTrovato:
+      description: Lavoro inesistente, scaduto o di un'altra chiave (`lavoro_non_trovato`).
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Errore" }
+    NonPronto:
+      description: Il lavoro non e' ancora terminato (`non_pronto`).
+      headers:
+        Retry-After:
+          schema: { type: integer }
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Errore" }
+    LunghezzaRichiesta:
+      description: Manca `Content-Length`, o il corpo e' chunked (`lunghezza_richiesta`).
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Errore" }
+    TroppoGrande:
+      description: Oltre i limiti di dimensione o di numero di file (`troppo_grande`, `troppi_file`).
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Errore" }
+    TipoNonSupportato:
+      description: Content-Type non accettato (`tipo_non_supportato`).
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Errore" }
+    Occupato:
+      description: Coda piena o troppe richieste contemporanee (`coda_piena`, `server_occupato`).
+      headers:
+        Retry-After:
+          schema: { type: integer }
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Errore" }
+
+  schemas:
+    NomeTemplate:
+      type: string
+      pattern: "^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$"
+      default: company
+      examples: [company]
+    Booleano:
+      type: string
+      enum: ["true", "false", "1", "0", "si", "sì", "no", "yes", "on", "off"]
+      description: Valore booleano come testo.
+    Watermark:
+      type: string
+      maxLength: 100
+      description: Filigrana diagonale su ogni pagina, su una riga.
+      examples: [BOZZA]
+
+    CodiceErrore:
+      type: string
+      enum:
+        - richiesta_non_valida
+        - opzione_non_valida
+        - percorso_non_valido
+        - non_autorizzato
+        - risorsa_non_trovata
+        - lavoro_non_trovato
+        - metodo_non_consentito
+        - non_pronto
+        - lunghezza_richiesta
+        - troppo_grande
+        - troppi_file
+        - tipo_non_supportato
+        - template_non_trovato
+        - nessun_documento
+        - zip_non_valido
+        - input_non_trovato
+        - front_matter_non_valido
+        - conversione_fallita
+        - tempo_scaduto
+        - uso_errato
+        - scrittura_fallita
+        - interrotto
+        - errore_interno
+        - coda_piena
+        - server_occupato
+
+    DettaglioErrore:
+      type: object
+      required: [codice, messaggio]
+      properties:
+        codice: { $ref: "#/components/schemas/CodiceErrore" }
+        messaggio:
+          type: string
+          description: Per le persone, in italiano.
+        suggerimento:
+          type: [string, "null"]
+
+    Errore:
+      type: object
+      required: [errore]
+      properties:
+        errore: { $ref: "#/components/schemas/DettaglioErrore" }
+      examples:
+        - errore:
+            codice: template_non_trovato
+            messaggio: template 'relazioni' non trovato.
+            suggerimento: "Template disponibili: company"
+
+    Salute:
+      type: object
+      required: [stato, versione, worker, in_coda, in_corso]
+      properties:
+        stato: { type: string, const: ok }
+        versione: { type: string, examples: ["2.0.0"] }
+        worker: { type: integer, description: Conversioni in parallelo. }
+        in_coda: { type: integer }
+        in_corso: { type: integer }
+
+    LavoroCreato:
+      type: object
+      required: [id, stato, stato_url, risultato_url]
+      properties:
+        id: { type: string, pattern: "^[0-9a-f]{32}$" }
+        stato: { type: string, const: in_coda }
+        posizione_in_coda:
+          type: [integer, "null"]
+          description: 1 = il prossimo a partire.
+        stato_url: { type: string }
+        risultato_url: { type: string }
+
+    Documento:
+      type: object
+      required: [sorgente, esito]
+      properties:
+        sorgente:
+          type: string
+          description: Percorso del .md, relativo a cio' che e' stato inviato.
+        esito: { type: string, enum: [ok, errore] }
+        pdf: { type: string, description: Presente se esito = ok. }
+        avvisi:
+          type: array
+          items: { type: string }
+          description: Avvisi di Typst, se esito = ok.
+        codice_uscita:
+          type: integer
+          description: Codice di uscita di impagina (2-6), se esito = errore.
+        errore:
+          $ref: "#/components/schemas/DettaglioErrore"
+
+    Lavoro:
+      type: object
+      required: [id, stato, creato, opzioni, documenti]
+      properties:
+        id: { type: string }
+        stato: { type: string, enum: [in_coda, in_corso, completato, fallito] }
+        esito:
+          type: [string, "null"]
+          enum: [ok, parziale, errore, null]
+          description: "`parziale`: alcuni documenti convertiti, altri no; il risultato contiene i riusciti."
+        creato: { type: string, format: date-time }
+        iniziato: { type: [string, "null"], format: date-time }
+        terminato: { type: [string, "null"], format: date-time }
+        scade:
+          type: [string, "null"]
+          format: date-time
+          description: Dopo questo istante il lavoro e il risultato vengono cancellati.
+        posizione_in_coda: { type: [integer, "null"] }
+        opzioni:
+          type: object
+          properties:
+            template: { type: string }
+            toc: { type: boolean }
+            cover: { type: [boolean, "null"] }
+            watermark: { type: [string, "null"] }
+            recursive: { type: boolean }
+        documenti:
+          type: array
+          items: { $ref: "#/components/schemas/Documento" }
+        errore:
+          oneOf:
+            - $ref: "#/components/schemas/DettaglioErrore"
+            - type: "null"
+        risultato:
+          oneOf:
+            - type: "null"
+            - type: object
+              required: [url, tipo, nome, byte]
+              properties:
+                url: { type: string }
+                tipo: { type: string, enum: [application/pdf, application/zip] }
+                nome: { type: string, examples: [relazione.pdf] }
+                byte: { type: integer }
+        stato_url: { type: string }
+
+    Dipendenze:
+      type: object
+      required: [file, ignorati, typst_grezzo]
+      properties:
+        documento: { type: [string, "null"] }
+        file:
+          type: array
+          items:
+            type: object
+            required: [percorso, tipo, stato]
+            properties:
+              percorso:
+                type: string
+                description: Percorso normalizzato, da usare come nome dell'allegato.
+                examples: [immagini/schema.png]
+              tipo: { type: string, enum: [immagine, doc-icon] }
+              stato: { type: string, enum: [da_allegare, allegato] }
+        ignorati:
+          type: array
+          items:
+            type: object
+            required: [riferimento, stato, motivo]
+            properties:
+              riferimento: { type: string }
+              stato: { type: string, enum: [remoto, esterno] }
+              motivo: { type: string }
+        typst_grezzo:
+          type: boolean
+          description: Il documento contiene Typst grezzo, che la modalita' protetta rifiuta.

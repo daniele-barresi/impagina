@@ -1,0 +1,17 @@
+# File di staging lasciati da una conversione interrotta
+.*.impagina-tmp
+
+# Sistema e editor
+.DS_Store
+Thumbs.db
+*~
+*.swp
+
+# Python
+__pycache__/
+*.pyc
+config/chiavi.conf
+config/chiavi.conf.nuovo
+
+# Backup locale della storia originale (mai da pubblicare)
+/backup/

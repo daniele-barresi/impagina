@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 420 130" width="420" height="130" role="img">
+  <!-- Diagramma d'esempio: solo forme geometriche, nessun testo, cosi' non
+       dipende da font esterni (Typst non incorpora i font di un SVG). -->
+  <rect x="6"   y="34" width="96" height="62" rx="8" fill="#E8EEF5" stroke="#1F4E79" stroke-width="2"/>
+  <rect x="162" y="34" width="96" height="62" rx="8" fill="#1F4E79"/>
+  <rect x="318" y="34" width="96" height="62" rx="8" fill="#E8EEF5" stroke="#1F4E79" stroke-width="2"/>
+  <path d="M108 65 H150" stroke="#1F4E79" stroke-width="2.5" fill="none"/>
+  <path d="M150 65 l-9 -5 v10 z" fill="#1F4E79"/>
+  <path d="M264 65 H306" stroke="#1F4E79" stroke-width="2.5" fill="none"/>
+  <path d="M306 65 l-9 -5 v10 z" fill="#1F4E79"/>
+  <circle cx="54"  cy="65" r="13" fill="#1F4E79"/>
+  <rect x="188" y="55" width="44" height="7" rx="3.5" fill="#FFFFFF"/>
+  <rect x="188" y="68" width="30" height="7" rx="3.5" fill="#9AB2C9"/>
+  <circle cx="366" cy="65" r="13" fill="#1F4E79"/>
+</svg>

@@ -1,0 +1,17 @@
+# Chiavi di accesso al servizio API di impagina.
+#
+# Una chiave per riga: un nome (lettere, cifre, . _ -) e l'impronta SHA-256
+# del token, MAI il token stesso. Il modo semplice per crearne una:
+#
+#   ./impagina.sh --api chiave nuova nextcloud
+#
+# che genera il token, lo mostra una sola volta e aggiunge qui l'impronta.
+# A mano:
+#
+#   TOKEN="imp_$(head -c 32 /dev/urandom | base64 | tr '+/' '-_' | tr -d '=\n')"
+#   printf 'nextcloud sha256:%s\n' "$(printf %s "$TOKEN" | sha256sum | cut -d' ' -f1)"
+#
+# Per revocare una chiave cancella la riga o commentala con #: il servizio
+# rilegge il file da solo, senza riavvio.
+
+# nextcloud   sha256:0000000000000000000000000000000000000000000000000000000000000000
